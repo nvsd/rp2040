@@ -1,10 +1,11 @@
 #![no_std]
 #![no_main]
 
+mod confidence;
+
 use cortex_m::delay::Delay;
 use defmt::*;
 use defmt_rtt as _;
-use embedded_hal::digital::v2::OutputPin;
 
 use fugit::RateExtU32;
 
@@ -20,6 +21,8 @@ use bsp::hal::{
     sio::Sio,
     watchdog::Watchdog,
 };
+
+use crate::confidence::ConfidentDirectionFilter;
 
 #[entry]
 fn main() -> ! {
@@ -63,22 +66,20 @@ fn main() -> ! {
         &clocks.peripheral_clock,
     );
 
-
     let mut imu = bno055::Bno055::new(i2c).with_alternative_address();
     imu.init(&mut delay).unwrap();
-    info!("stuck!");
     imu.set_mode(bno055::BNO055OperationMode::IMU, &mut delay)
         .unwrap();
 
-
-    let mut led_pin = pins.led.into_push_pull_output();
+    let mut cdf = ConfidentDirectionFilter::new();
 
     loop {
-        info!("on!");
-        led_pin.set_high().unwrap();
-        delay.delay_ms(500);
-        info!("off!");
-        led_pin.set_low().unwrap();
-        delay.delay_ms(500);
+        match imu.linear_acceleration() {
+            Ok(acc) => {
+                let direction = cdf.get_confident_direction(acc.z);
+                info!("{:?}", direction);
+            }
+            Err(_) => info!("Acceleration error"),
+        };
     }
 }
